@@ -1,0 +1,270 @@
+---
+title: "train_machine_mlr"
+author: "jojoecp"
+date: "3/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+load library
+```{r}
+library(tm)
+library(dplyr)
+library(SnowballC)
+library(ROCR)
+library(tidytext)
+library(utiml)
+library(mlr)
+library(rpart)
+library(stringr)
+```
+
+
+This learning machine need to pass this following steps:
+
+1. load data "my_personality.csv" as our base training model. The training data are based on english
+
+2. preprocess the 'STATUS' data using 'tm' package
+  > convert text to corpus
+  > text cleaning (remove numbers, punctutation, stopwords, whitespace, and stemming)
+  > tokenization
+  > cross-validation (only split the label target from predictor, dont split the row to make train and test!)
+  > find most freq word
+  > convert 0 to 1 (#maybe not necessary)
+  
+3. make multi label 'task' type data using mlr package
+
+4. make learner ("classif.rpart")
+  4.a for algorithm adaptation methods, use different code (random forest and ferns)
+      > makeLearner("multilabel.randomForestSRC")
+      > makeLearner("multilabel.rFerns")
+      
+5. make wrapper for every problem transformation methods
+  5.a makeMultilabelBinaryRelevanceWrapper()
+  5.b makeMultilabelClassifierChainsWrapper()
+  5.c makeMultilabelNestedStackingWrapper()
+  5.d makeMultilabelDBRWrapper()
+  5.e makeMultilabelStackingWrapper()
+
+6. make model for every multi-label classification learner
+
+7. predict every model and measure the performance
+
+8. for 'problem transformation' methods, use its own 'getperforance' function to check its error
+
+    expectation: the builded train model should be able to predict random text train data
+    
+Voila !
+
+# learner machine
+
+```{r}
+status_data <- read.csv("E:/ALGORITMA/CHECKLIST PROB/ontologi hehe/kaggle1/mypersonality_final.csv")
+
+selected1 <- status_data %>% select(STATUS, sEXT, sNEU, sAGR, sCON, sOPN) # score label numeric
+selected2 <- status_data %>% select(STATUS, cEXT, cNEU, cAGR, cCON, cOPN) # label logical
+```
+
+
+
+convert text to corpus
+```{r}
+corpus1 <- VCorpus(VectorSource(selected2$STATUS))
+corpus1[[1]]$content
+```
+
+text Cleaning
+```{r}
+#remove numbers
+corpus1 <- tm_map(corpus1, removeNumbers)
+
+#remove stopwords
+corpus1 <- tm_map(corpus1, removeWords, stopwords("en"))
+
+#remove punctutaions
+corpus1 <- tm_map(corpus1, removePunctuation)
+
+#stemming
+corpus1 <- tm_map(corpus1, stemDocument)
+
+#remove white space
+corpus1 <- tm_map(corpus1, stripWhitespace)
+
+```
+
+tokenization
+```{r}
+person_dtm <- DocumentTermMatrix(corpus1)
+
+```
+
+
+cross-validation
+```{r}
+person_label <- selected2[,2:6]
+person_label
+```
+
+
+most freq word
+```{r}
+freq <- findFreqTerms(person_dtm, 30)
+
+train <- person_dtm[,freq]
+```
+
+convert 0 to 1
+
+```{r}
+bernoulli_conv <- function(x){
+  x <- as.factor(as.numeric(x>0))
+}
+
+train <- apply(train,2,bernoulli_conv)
+
+traindf <- as.data.frame(train)
+
+trainwlabel <- cbind(data.frame(traindf),
+      data.frame(person_label))
+
+```
+
+
+
+# create task data
+```{r}
+
+person.task <- makeMultilabelTask(id= deparse(substitute(trainwlabel)),trainwlabel, target = c("cEXT", "cNEU", "cAGR", "cCON", "cOPN"))
+
+person.train.mlr = getTaskData(person.task)
+person.label.mlr = colnames(person.train.mlr)[960:964]
+
+```
+
+Make Learner and wrap
+
+# Problem transformation methods
+
+## 1. Binary Relevance (BR)
+```{r}
+lrn.BR <- makeLearner("classif.rpart", predict.type = "prob", )
+lrn.BR <- makeMultilabelBinaryRelevanceWrapper(lrn.BR)
+lrn.BR
+
+# BR Model
+
+mod.br <- train(lrn.BR, person.task)
+mod.br
+
+```
+
+resample for calculating performance
+```{r}
+rdesc <- makeResampleDesc(method = "CV", stratify = FALSE, iters=5)
+re.BR <- resample(learner = lrn.BR, task = person.task, resampling = rdesc,
+                  measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1), show.info = FALSE)
+
+re.BR$aggr
+```
+
+performance based on method function if test data is given
+```{r}
+# subset the task data as test data
+pred.BR <- predict(mod.br, person.task, subset = 1:50)
+performance(pred.BR, measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1))
+
+pred.BR
+
+getMultilabelBinaryPerformances(pred.BR, measures = list(acc,mmce,auc))
+```
+
+
+
+
+## 2. Classifier Chains (CC)
+```{r}
+lrn.CC <- makeLearner("classif.rpart", predict.type = "prob", )
+lrn.CC <- makeMultilabelClassifierChainsWrapper(lrn.CC)
+lrn.CC
+
+# BR Model
+
+mod.CC <- train(lrn.CC, person.task)
+mod.CC
+
+```
+
+resample for calculating performance
+```{r}
+rdesc <- makeResampleDesc(method = "CV", stratify = FALSE, iters=5)
+re.CC <- resample(learner = lrn.CC, task = person.task, resampling = rdesc,
+                  measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1), show.info = FALSE)
+
+re.CC$aggr
+```
+performance based on method function if test data is given
+```{r}
+
+# subset the task data as test data
+pred.CC <- predict(mod.CC, person.task, subset = 1:50)
+performance(pred.CC, measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1))
+
+getMultilabelBinaryPerformances(pred.CC, measures = list(acc,mmce,auc))
+```
+
+
+
+## 3. Nested Stacking (NST)
+```{r}
+lrn.NST <- makeLearner("classif.rpart", predict.type = "prob", )
+lrn.NST <- makeMultilabelNestedStackingWrapper(lrn.NST)
+lrn.NST
+
+# BR Model
+
+mod.NST <- train(lrn.NST, person.task)
+mod.NST
+
+```
+
+resample for calculating performance
+```{r}
+rdesc <- makeResampleDesc(method = "CV", stratify = FALSE, iters=5)
+re.NST <- resample(learner = lrn.NST, task = person.task, resampling = rdesc,
+                  measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1), show.info = FALSE)
+
+re.NST$aggr
+
+```
+
+performance based on method function if test data is given
+```{r}
+
+# subset the task data as test data
+pred.NST <- predict(mod.NST, person.task, subset = 1:50)
+performance(pred.NST, measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1))
+
+getMultilabelBinaryPerformances(pred.NST, measures = list(acc,mmce,auc))
+```
+
+## 4. Dependant Binary Relevance (DBR)
+
+
+
+convert all performance measure as data frame
+```{r}
+per1 <- cbind(data.frame(re.NST$aggr),
+      data.frame(re.BR$aggr), data.frame(re.CC$aggr))
+per1
+```
+
+

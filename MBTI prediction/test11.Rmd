@@ -1,0 +1,163 @@
+---
+title: "feelin good"
+author: "jojoecp"
+date: "3/2/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tm)
+library(dplyr)
+library(SnowballC)
+library(ROCR)
+library(tidytext)
+library(utiml)
+library(mlr)
+library(rpart)
+library(stringr)
+```
+
+
+```{r}
+
+datatrain1 <- read.csv("E:/ALGORITMA/CHECKLIST PROB/ontologi hehe/kaggle1/mypersonality_final.csv")
+datatrain2 <- read.csv("E:/ALGORITMA/CHECKLIST PROB/ontologi hehe/kaggle1/mypersonality_final.csv")
+head(datatrain1)
+str(datatrain1)
+?read.csv
+
+str(fortrain1)
+
+fortrain1 <- datatrain1 %>% select(STATUS, sEXT, sNEU, sAGR, sCON, sOPN)
+
+fortrain2 <- datatrain2 %>% select(STATUS, cEXT, cNEU, cAGR, cCON, cOPN)
+```
+
+convert text to corpus
+```{r}
+train_corpus <- VCorpus(VectorSource(fortrain1$STATUS))
+train_corpus[[1]]$content
+```
+
+text Cleaning
+```{r}
+#remove numbers
+train_corpus <- tm_map(train_corpus, removeNumbers)
+
+#remove stopwords
+train_corpus <- tm_map(train_corpus, removeWords, stopwords("en"))
+
+#remove punctutaions
+train_corpus <- tm_map(train_corpus, removePunctuation)
+
+#stemming
+train_corpus <- tm_map(train_corpus, stemDocument)
+
+#remove white space
+train_corpus <- tm_map(train_corpus, stripWhitespace)
+
+```
+
+tokenization
+```{r}
+train_dtm <- DocumentTermMatrix(train_corpus)
+inspect(train_dtm)
+```
+
+cross-validation
+```{r}
+set.seed(1502)
+index <- sample(1:nrow(train_dtm), 0.75*nrow(train_dtm))
+
+train <- train_dtm[index,]
+test <- train_dtm[-index,]
+
+
+
+train_label <- fortrain1[index,2:6]
+test_label <- fortrain1[-index,2:6]
+
+train_label2 <- fortrain2[index,2:6]
+test_label2 <- fortrain2[-index,2:6]
+
+
+head(train_label2)
+
+
+train_label2 <- train_label2 %>% mutate(
+  cEXT = as.logical(cEXT),
+  cNEU = as.logical(cNEU),
+  cAGR = as.logical(cAGR),
+  cCON = as.logical(cCON),
+  cOPN = as.logical(cOPN)
+)
+
+```
+
+most freq word
+```{r}
+freq <- findFreqTerms(train_dtm, 30)
+
+train <- train[,freq]
+test <- test[,freq]
+```
+
+convert 0 to 1
+
+```{r}
+bernoulli_conv <- function(x){
+  x <- as.factor(as.numeric(x>0))
+}
+
+train <- apply(train,2,bernoulli_conv)
+test <- apply(test,2,bernoulli_conv)
+
+train
+
+traindf <- as.data.frame(train)
+
+traindfx <- cbind(data.frame(traindf),
+      data.frame(train_label2))
+
+traindfx2 <- cbind(data.frame(traindf),
+                   data.frame(train_label))
+```
+`
+
+exp 1: MLR
+```{r}
+train.task <- makeMultilabelTask(id= deparse(substitute(traindfx)),traindfx, target = c("cEXT", "cNEU", "cAGR", "cCON", "cOPN"))
+
+#train.task.reg <- makeRegrTask(id= deparse(substitute(traindfx2)),traindfx2, target = c("cEXT", "cNEU", "cAGR", "cCON", "cOPN"))
+
+trainmlr = getTaskData(train.task)
+labelsmlr = colnames(trainmlr)[960:964]
+#train.task = makeMultilabelTask(id="multi", data=trainmlr, target = labelsmlr)
+
+train.task
+
+```
+
+```{r}
+lrn1 <- makeLearner("classif.rpart", predict.type = "prob", )
+lrn1 <- makeMultilabelBinaryRelevanceWrapper(lrn1)
+lrn1
+
+mod <- train(lrn1, train.task)
+mod
+
+pred <- predict(mod, train.task, subset = 1:50)
+pred
+
+performance(pred, measures = list(multilabel.subset01, multilabel.hamloss, multilabel.acc,
+  multilabel.f1))
+
+getMultilabelBinaryPerformances(pred, measures = list(acc,mmce,auc))
+
+listMeasures()
+```
+
