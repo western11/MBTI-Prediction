@@ -32,13 +32,7 @@ Expected output in step 1:
 Prediction output with its probability. the prob will be used as weight (scoring) for the next step
 
 Alternative step 1:
-make regression model to target variabel one by one using every availiable algorithm. the best performance algorithm will be used as the learner in the prediction machine
-
-Alternative regression output in step 1:
-Extraversion: regression value in the scale of 0-1
-Openness: regression value in the scale of 0-1
-Agreebleness: regression value in the scale of 0-1
-Consciencetiousness: regression value in the scale of 0-1
+make regression model to target variabel one by one using every availiable algorithm. the best performance algorithm will be used as the learner in the prediction machine. the expected output for this alternative step is regression value in the scale of 0-1 (or any scale) for every 5 personality traits.
 
 step 2:
 Convert big 5 personality traits to MBTI dimensions.
