@@ -1,0 +1,402 @@
+---
+title: "make this happen"
+author: "jojoecp"
+date: "3/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+library
+```{r}
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(data.table)
+library(tm)
+library(caret)
+library(UBL)
+library(rsample)
+library(ranger)
+library(keras)
+library(MLmetrics)
+library(randomForest)
+```
+
+
+```{r}
+dataset <- read.csv("E:/ALGORITMA/CHECKLIST PROB/ontologi hehe/kaggle1/mbti_1.csv", stringsAsFactors = F)
+
+mbti.type <- data.frame(dataset[,1])
+mbti.text <- data.frame(dataset[,2])
+
+mbti.text$dataset...2. <- as.character(mbti.text$dataset...2.)                   
+
+
+mbti.text <- mbti.text %>% rename("text" = "dataset...2.")
+mbti.type <- mbti.type %>% rename("type" = "dataset...1.")
+mbti.type <- mbti.type %>% mutate("type" = as.character(type))
+
+head(mbti.type) 
+
+type.df <- data.frame(ei = substr(mbti.type$type,0,1),
+                      ns = substr(mbti.type$type,2,2),
+                      tf = substr(mbti.type$type,3,3),
+                      jp = substr(mbti.type$type,4,4))
+
+mbti.df <- cbind(mbti.text,type.df)
+
+mbti.df <- mbti.df %>% mutate(
+  "ei" = as.factor(ei), "ns" = as.factor(ns),
+  "tf" = as.factor(tf), "jp" = as.factor(jp)
+)
+
+  mbti.ie <- mbti.df[,1:2]
+  
+```
+
+```{r}
+summary(mbti.df[,2:5])
+```
+
+# text preparation
+
+convert text to corpus
+```{r}
+mbticorp <- VCorpus(VectorSource(mbti.df$text))
+
+```
+
+text Cleaning
+```{r}
+#remove numbers
+mbticorp <- tm_map(mbticorp, removeNumbers)
+
+#remove stopwords
+mbticorp <- tm_map(mbticorp, removeWords, stopwords("en"))
+
+#remove punctutaions
+mbticorp <- tm_map(mbticorp, removePunctuation)
+
+#stemming
+mbticorp <- tm_map(mbticorp, stemDocument)
+
+#remove white space
+mbticorp <- tm_map(mbticorp, stripWhitespace)
+
+```
+
+tokenization
+```{r}
+person_dtm <- DocumentTermMatrix(mbticorp)
+inspect(person_dtm)
+```
+
+
+most freq word
+```{r}
+freq <- findFreqTerms(person_dtm, 450)
+train <- person_dtm[,freq]
+
+freq2 <- findFreqTerms(person_dtm,15)
+trainex <- person_dtm[,freq2]
+
+
+
+```
+
+## return clean words from corpus to df
+```{r}
+corpus.df <- data.frame(text=unlist(sapply(mbticorp, '[', "content")),
+                        stringAsFactors=F)
+head(corpus.df)
+
+
+num.text <- tidytext::tidy(train)
+str(num.text)
+
+text.counter <- num.text %>% mutate(
+  document = as.factor(document)
+) %>% group_by(document) %>%
+  summarise(sum(count)) %>% as.data.frame()
+
+maxlen <- max(text.counter$`sum(count)`)
+
+text.clean <- num.text %>% group_by(document) %>%
+  summarise(new = paste(rep(term,count), collapse = " "))
+
+str(text.clean)
+tokenizer <- text_tokenizer(num_words = num_words, lower = T) %>%
+  fit_text_tokenizer(text.clean$new)
+
+ei.trainer.X <- texts_to_sequences(tokenizer, text.clean$new) %>%
+  pad_sequences(maxlen = maxlen)
+ei.val.X <- 
+```
+
+
+## Not necessary if youre not using naive bayes
+convert 0 to 1
+
+```{r}
+bernoulli_conv <- function(x){
+  x <- as.factor(as.numeric(x>0))
+}
+
+trainex <- apply(trainex,2,bernoulli_conv)
+
+train <- apply(train,2,bernoulli_conv)
+```
+
+
+```{r}
+
+train1 <- as.data.frame(as.matrix(train), stringAsFactors = F) # 1513 variables
+
+train2 <- as.data.frame(as.matrix(trainex), stringAsFactors = F) # 11668 variables
+
+train2.ei <- cbind(train1,data.frame(type.df$ei)) %>% rename("targetY" = "type.df.ei",
+                                                             "break." = "break",
+                                                             "next." = "next",
+                                                             "for." = "for",
+                                                             "function." = "function",
+                                                             "repeat." = "repeat",
+                                                             "while." = "while")
+train2.ns <- cbind(train1,data.frame(type.df$ns)) %>% rename("targetY" = "type.df.ns",
+                                                             "break." = "break",
+                                                             "next." = "next",
+                                                             "for." = "for",
+                                                             "function." = "function",
+                                                             "repeat." = "repeat",
+                                                             "while." = "while")
+train2.tf <- cbind(train1,data.frame(type.df$tf)) %>% rename("targetY" = "type.df.tf",
+                                                             "break." = "break",
+                                                             "next." = "next",
+                                                             "for." = "for",
+                                                             "function." = "function",
+                                                             "repeat." = "repeat",
+                                                             "while." = "while")
+train2.jp <- cbind(train1,data.frame(type.df$jp)) %>% rename("targetY" = "type.df.jp",
+                                                             "break." = "break",
+                                                             "next." = "next",
+                                                             "for." = "for",
+                                                             "function." = "function",
+                                                             "repeat." = "repeat",
+                                                             "while." = "while")
+
+summary(train2.ei$targetY)
+summary(train2.ns$targetY)
+summary(train2.tf$targetY)
+summary(train2.jp$targetY)
+
+
+```
+
+## tuning imbalance data with SMOTE for E/I and N/S
+```{r}
+train2.ei.bal <- SmoteClassif(targetY~., train2.ei, C.perc = "balance")
+train2.ns.bal <- SmoteClassif(targetY~., train2.ns, C.perc = "balance")
+
+```
+
+
+## spliting
+```{r}
+set.seed(1502)
+split.train.ei <- initial_split(train2.ei.bal, prop = 0.80)
+trainer.ei <- training(split.train.ei)
+tester.ei <- testing(split.train.ei)
+val.ei <- initial_split(tester.ei, prop = 0.5)
+tester.ei <- testing(val.ei)
+valid.ei <- training(val.ei)
+
+set.seed(1502)
+split.train.ns <- initial_split(train2.ns.bal, prop = 0.80)
+trainer.ns <- training(split.train.ns)
+tester.ns <- testing(split.train.ns)
+val.ns <- initial_split(tester.ns, prop = 0.5)
+tester.ns <- testing(val.ns)
+valid.ns <- training(val.ns)
+
+set.seed(1502)
+split.train.tf <- initial_split(train2.tf, prop = 0.80)
+trainer.tf <- training(split.train.tf)
+tester.tf <- testing(split.train.tf)
+val.tf <- initial_split(tester.tf, prop = 0.5)
+tester.tf <- testing(val.tf)
+valid.tf <- training(val.tf)
+
+set.seed(1502)
+split.train.jp <- initial_split(train2.jp, prop = 0.80)
+trainer.jp <- training(split.train.jp)
+tester.jp <- testing(split.train.jp)
+val.jp <- initial_split(tester.jp, prop = 0.5)
+tester.jp <- testing(val.jp)
+valid.jp <- training(val.jp)
+```
+
+
+
+
+# Modeling
+
+##
+cv controller
+```{r}
+control = trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 3,
+  summaryFunction = twoClassSummary
+)
+
+```
+
+## Random forest from `RandomForest` package
+
+tuning cv
+```{r}
+controlie <- trainControl(method = "repeatedcv", number = 5, repeats = 3,
+                          search = "grid")
+set.seed(1502)
+tunegrid <- expand.grid(.mtry=c(1:5))
+```
+
+```{r}
+grid_search_ie <- train(targetY~., data=trainer.ei, method="rf",
+                        metric = "Accuracy", tuneGrid=tunegrid, trControl = controlie)
+
+gc()
+```
+
+rf baseline
+```{r}
+start.rf <- Sys.time()
+rfbase <- randomForest(targetY~., data = trainer.ei)
+end.rf <- Sys.time()
+
+end.rf - start.rf
+```
+```{r}
+predictbase <- predict(rfbase, newdata = valid.ei)
+confusionMatrix(predictbase,valid.ei$targetY)
+
+```
+
+
+
+## NN
+
+
+## build `RNN-GRU` 
+```{r}
+num_words <- 1513
+maxlen
+
+```
+
+```{r}
+mod.nn.ie <- keras_model_sequential()
+
+mod.nn.ie %>%
+  layer_embedding(
+    input_dim = num_words,
+    input_length = maxlen,
+    output_dim = 32,
+    embeddings_initializer = initializer_random_uniform(seed=1502)
+  ) %>%
+  layer_dropout(
+    rate = 0.4
+  ) %>%
+  layer_gru(
+    units = 378,
+    dropout = 0.2,
+    recurrent_dropout = 0.2,
+    return_sequences = F,
+    recurrent_initializer = initializer_random_uniform(seed=1502),
+    kernel_initializer = initializer_random_uniform(seed=1502)
+  ) %>%
+  layer_dense(
+    units = 94,
+    activation = "relu",
+    kernel_initializer = initializer_random_uniform(seed=1502)
+  ) %>%
+  layer_dense(
+    name = "output",
+    units = 2,
+    activation = "softmax",
+    kernel_initializer = initializer_random_uniform(seed=1502)
+  )
+
+
+```
+
+```{r}
+mod.nn.ie %>% compile(
+  optimizer = "adam",
+  metrics = "accuracy",
+  loss = "categorical_crossentropy"
+)
+
+summary(mod.nn.ie)
+```
+
+```{r}
+epochs <- 10
+batch_size <- 600
+trainer.ei.X <- trainer.ei[,-1514]
+
+y.train.ei <- trainer.ei %>%
+  mutate(targetY = factor(targetY, levels = c("I","E")),
+         targetY = as.numeric(targetY),
+         targetY = targetY - 1)
+y.val.ei <- valid.ei %>%
+  mutate(targetY = factor(targetY, levels = c("I","E")),
+         targetY = as.numeric(targetY),
+         targetY = targetY - 1)
+
+trainer.ei.Y <- to_categorical(y.train.ei$targetY, num_classes = 2)
+valid.ei.X <- valid.ei[,-1514]
+valid.ei.Y <- to_categorical(y.val.ei$targetY, num_classes = 2)
+
+his.mod.ie <- mod.nn.ie %>%
+  fit(trainer.ei.X, trainer.ei.Y,
+      batch_size = batch_size,
+      epochs = epochs,
+      verbose = 1,
+      validation_data = list(
+        valid.ei.X, valid.ei.Y
+      ))
+
+```
+
+```{r}
+mod.nn.ie <- keras_model_sequential()
+mod.nn.ie <- train(targetY~., data = trainer.ei,
+                   method = "mlpKerasDropout",
+                   preProc = c('center','scale','spatialSign'),
+                   trControl = trainControl(search = "random",
+                                            classProbs = T,
+                                            summaryFunction = mnLogLoss,
+                                            allowParallel = T),
+                   metric = 'logLoss', tuneLength = 20,
+              validation_split = 0.20,
+              callbacks = list(
+                keras::callback_early_stopping(monitor = "val_loss", mode = "auto",
+                                               patience = 20,
+                                               restore_best_weights = T)
+              ), epochs = 20)
+
+
+??trControl
+mod.xgb.ie <- caret::train(targetY ~., data = trainer.ei,
+                           method = "ranger",
+                           trControl = control)
+
+nnfitie <- build(mod.nn.ie)
+gc()
+```
+
