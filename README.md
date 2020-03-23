@@ -47,4 +47,15 @@ step 3:
 Step 3: Build R shinny apps that connected to Twitter API
 
 
+========================================================================================================================================! Update 23/3/2020
+after a long trial and error
+
+This project are no longer trying to predict MBTI from big 5 personality traits, i will predict it directly instead. The data is from kaggle and simply just text form social media status and MBTI label. 
+
+Step 1: find the best model
+for now, i still trying to create RNN-Gru model. It needs lots of computational 'power', and since i only have potato laptop, the project will need some more time.
+
+I split the label to 4 option. I/E , N/S, F/T, J/P make the project into binary classifier. 
+
+
 
